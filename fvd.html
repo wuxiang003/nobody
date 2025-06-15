@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>受迫振动演示</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 10px 20px;
+      background: #fff;
+    }
+    #container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      max-width: 1100px;
+      width: 100%;
+    }
+    .plot-title {
+      text-align: center;
+      width: 100%;
+      margin: 5px 0;
+      font-weight: bold;
+      font-size: 1.2em;
+    }
+    #springCanvas,
+    #wavePlot,
+    #ampPlot {
+      width: 100%;
+      height: 350px;
+      margin: 5px 0;
+      box-sizing: border-box;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    #sliderContainer {
+      width: 100%;
+      margin: 10px 0;
+      user-select: none;
+      padding: 0 10px;
+    }
+    .param-slider {
+      width: 100%;
+      margin: 5px 0;
+    }
+    .param-container {
+      width: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      margin: 10px 0;
+    }
+    .param-item {
+      width: 48%;
+      margin-bottom: 10px;
+    }
+    label {
+      font-size: 16px;
+      margin-right: 10px;
+    }
+    .param-value {
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div class="plot-title">弹簧振子受迫振动模型</div>
+    <div id="springCanvas"></div>
+    
+    <div class="param-container">
+      <div class="param-item">
+        <label>质量 m: <span class="param-value" id="mValue">1.00</span> kg</label>
+        <input type="range" class="param-slider" id="mSlider" min="0.01" max="5" step="0.01" value="1" />
+      </div>
+      <div class="param-item">
+        <label>弹性系数 k: <span class="param-value" id="kValue">10.00</span> N/m</label>
+        <input type="range" class="param-slider" id="kSlider" min="0.1" max="20" step="0.1" value="10" />
+      </div>
+      <div class="param-item">
+        <label>阻尼系数 c: <span class="param-value" id="cValue">0.05</span> N·s/m</label>
+        <input type="range" class="param-slider" id="cSlider" min="0" max="0.2" step="0.001" value="0.05" />
+      </div>
+      <div class="param-item">
+        <label>驱动力 F0: <span class="param-value" id="fValue">1.00</span> N</label>
+        <input type="range" class="param-slider" id="fSlider" min="0.01" max="3" step="0.01" value="1" />
+      </div>
+    </div>
+    
+    <div id="sliderContainer">
+      <label>驱动频率: <span id="freqLabel">0.00</span> Hz</label>
+      <input type="range" id="freqSlider" class="param-slider" min="0" max="1.5" step="0.001" value="0" />
+    </div>
+    
+    <div class="plot-title">位移-时间图</div>
+    <div id="wavePlot"></div>
+    
+    <div class="plot-title">振幅-频率响应图</div>
+    <div id="ampPlot"></div>
+  </div>
+  <script>
+    window.onload = function () {
+      // 初始参数
+      let m = 1, k = 10, c = 0.05, F0 = 1;
+      const dt = 0.05, T = 120;
+      let omega0 = Math.sqrt(k / m);
+      let f0 = omega0 / (2 * Math.PI);
+      let A_max = F0 / (c * omega0);
+      
+      const simTime = Array.from({ length: Math.ceil(T / dt) + 1 }, (_, i) => i * dt);
+      let x_t = [], t_idx = 0, freq = 0;
+      let freqs = Array.from({ length: 60 }, (_, i) => i * (1.5 / 59));
+      let A_sim = freqs.map((f) => steadyAmp(f));
+      
+      // 计算坐标轴范围
+      function calculateAxisRange() {
+        omega0 = Math.sqrt(k / m);
+        A_max = F0 / (c * omega0);
+        const axisMax = 2 * A_max; // 坐标轴范围为两倍最大振幅
+        return { axisMax };
+      }
+      
+      // 更新振幅-频率图
+      function updateAmpPlot() {
+        omega0 = Math.sqrt(k / m);
+        f0 = omega0 / (2 * Math.PI);
+        A_max = F0 / (c * omega0);
+        freqs = Array.from({ length: 60 }, (_, i) => i * (1.5 / 59));
+        A_sim = freqs.map((f) => steadyAmp(f));
+        
+        Plotly.newPlot(
+          "ampPlot",
+          [
+            { x: freqs, y: A_sim, mode: "lines", name: "模拟振幅" },
+            {
+              x: [f0, f0],
+              y: [0, A_max],
+              mode: "lines",
+              line: {color: "red", dash: "dash"},
+              name: `固有频率: ${f0.toFixed(3)} Hz`
+            },
+            {
+              x: [f0],
+              y: [A_max],
+              mode: "markers",
+              marker: {size: 10, color: "red"},
+              name: `理论振幅: ${A_max.toFixed(3)}`,
+            }
+          ],
+          {
+            margin: { t: 50, r: 50, b: 60 },
+            title: "振幅-频率关系",
+            xaxis: { title: "驱动频率 (Hz)" },
+            yaxis: { title: "稳态振幅 (m)" },
+            annotations: [{
+              x: f0,
+              y: A_max,
+              xanchor: 'center',
+              yanchor: 'bottom',
+              text: `共振点<br>(${f0.toFixed(3)}Hz, ${A_max.toFixed(3)}m)`,
+              showarrow: true,
+              arrowhead: 2,
+              arrowsize: 1,
+              arrowwidth: 2,
+              ax: 0,
+              ay: -40
+            }]
+          }
+        );
+      }
+      
+      // 初始绘图
+      Plotly.newPlot(
+        "wavePlot",
+        [{ x: [], y: [], mode: "lines", line: { color: "blue" } }],
+        {
+          margin: { t: 50, r: 50, b: 60 },
+          title: "位移-时间曲线",
+          xaxis: { title: "时间 (秒)" },
+          yaxis: { title: "位移 (m)" },
+        }
+      );
+      
+      updateAmpPlot();
+      
+      new p5((p) => {
+        p.setup = () => {
+          const canvas = p.createCanvas(1100, 350);
+          canvas.parent("springCanvas");
+          p.frameRate(20);
+        };
+        
+        p.draw = () => {
+          p.background(255);
+          p.stroke(0);
+          p.fill(0);
+          p.textSize(14);
+          p.textAlign(p.LEFT, p.TOP);
+          if (x_t.length < simTime.length) updateXT(freq);
+          const x = x_t[t_idx % x_t.length];
+          t_idx++;
+          Plotly.update("wavePlot", { x: [simTime], y: [x_t] });
+          
+          // 计算坐标轴范围
+          const { axisMax } = calculateAxisRange();
+          
+          // 坐标轴参数
+          const axisY = 300; // 坐标轴Y位置
+          const wallX = 50; // 墙壁位置（x=0）
+          
+          // 坐标轴范围从-最大振幅到+最大振幅（显示相对位移）
+          const minMeter = -axisMax/2;
+          const maxMeter = axisMax/2;
+          const pixelsPerMeter = (p.width - 100) / (maxMeter - minMeter);
+          
+          // 1. 坐标轴系统
+          p.line(wallX, axisY, p.width, axisY); // x轴
+          
+          // 绘制刻度线和数值（显示相对位移）
+          for (let meter = minMeter; meter <= maxMeter; meter += axisMax/10) {
+            const posX = wallX + (meter - minMeter) * pixelsPerMeter;
+            
+            // 主要刻度
+            p.line(posX, axisY - 5, posX, axisY + 5);
+            
+            // 刻度标签
+            p.textSize(12);
+            p.textAlign(p.CENTER, p.TOP);
+            p.text(meter.toFixed(2), posX, axisY + 8);
+          }
+          
+          // 原点标记
+          const zeroPosX = wallX + (0 - minMeter) * pixelsPerMeter;
+          p.textSize(12);
+          p.textAlign(p.CENTER, p.TOP);
+          p.text("0", zeroPosX, axisY + 8);
+          
+          // 坐标轴标签
+          p.text("相对位移 (m)", p.width - 50, axisY - 10);
+          p.text("→ +x方向", p.width - 50, axisY - 30);
+          
+          // 2. 墙壁（x=0位置）
+          const wallTop = 150;
+          const wallHeight = 30;
+          p.fill(100);
+          p.rect(wallX - 15, wallTop, 15, wallHeight);
+          p.line(wallX, wallTop + wallHeight / 4, wallX, wallTop + 3 * wallHeight / 4);
+          p.textAlign(p.RIGHT, p.TOP);
+          p.text("固定端", wallX - 5, wallTop - 20);
+          
+          // 3. 弹簧和小球的位置（显示相对位移）
+          const springY = wallTop + wallHeight / 2;
+          const relativePos = x; // 直接使用相对位移x
+          const clampedPos = Math.min(Math.max(relativePos, minMeter), maxMeter); // 限制在范围内
+          const ballPixelX = wallX + (clampedPos - minMeter) * pixelsPerMeter;
+          const springLength = ballPixelX - wallX;
+          
+          // 绘制弹簧（折线形式，密度翻倍）
+          p.noFill();
+          p.stroke(0);
+          p.beginShape();
+          const segments = 40; // 折线段数量（密度翻倍）
+          const amp = 15; // 波幅
+          
+          for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const tx = wallX + t * springLength;
+            // 折线形式的弹簧
+            const ty = springY + (i % 2 === 0 ? -amp : amp);
+            p.vertex(tx, ty);
+          }
+          p.endShape();
+          
+          // 4. 绘制小球
+          p.fill("red");
+          p.ellipse(ballPixelX, springY, 30, 30);
+          
+          // 5. 位置指示器
+          p.stroke(255, 0, 0, 150);
+          p.line(ballPixelX, springY, ballPixelX, axisY);
+          
+          // 当前位置标签（显示相对位移）
+          const posText = "当前位移: " + relativePos.toFixed(3) + " m";
+          p.textSize(12);
+          p.fill(255, 0, 0);
+          p.textAlign(p.CENTER);
+          p.text(posText, ballPixelX, axisY - 20);
+          
+          // 6. 显示参数
+          p.textSize(14);
+          p.fill(0);
+          p.textAlign(p.LEFT, p.TOP);
+          p.text(`参数: m=${m.toFixed(2)}kg, k=${k.toFixed(2)}N/m, c=${c.toFixed(3)}N·s/m, F0=${F0.toFixed(2)}N`, 20, 20);
+          p.text(`固有频率: ${f0.toFixed(3)}Hz, 理论最大振幅: ${A_max.toFixed(3)}m`, 20, 40);
+          p.text(`位移范围: ${minMeter.toFixed(2)} - ${maxMeter.toFixed(2)}m`, 20, 60);
+        };
+      });
+      
+      // 参数滑块事件监听（减小最小刻度）
+      document.getElementById("mSlider").addEventListener("input", (e) => {
+        m = parseFloat(e.target.value);
+        document.getElementById("mValue").textContent = m.toFixed(2);
+        resetSimulation();
+      });
+      document.getElementById("kSlider").addEventListener("input", (e) => {
+        k = parseFloat(e.target.value);
+        document.getElementById("kValue").textContent = k.toFixed(2);
+        resetSimulation();
+      });
+      document.getElementById("cSlider").addEventListener("input", (e) => {
+        c = parseFloat(e.target.value);
+        document.getElementById("cValue").textContent = c.toFixed(3);
+        resetSimulation();
+      });
+      document.getElementById("fSlider").addEventListener("input", (e) => {
+        F0 = parseFloat(e.target.value);
+        document.getElementById("fValue").textContent = F0.toFixed(2);
+        resetSimulation();
+      });
+      document.getElementById("freqSlider").addEventListener("input", (e) => {
+        freq = parseFloat(e.target.value);
+        document.getElementById("freqLabel").textContent = freq.toFixed(3);
+        resetSimulation();
+      });
+      
+      function resetSimulation() {
+        t_idx = 0;
+        x_t = [];
+        updateAmpPlot();
+      }
+      
+      function updateXT(f) {
+        const omega = 2 * Math.PI * f;
+        let x = 0, v = 0;
+        x_t = simTime.map((t) => {
+          const F = f === 0 ? 0 : F0 * Math.cos(omega * t);
+          const a = (F - c * v - k * x) / m;
+          v += a * dt;
+          x += v * dt;
+          return x;
+        });
+      }
+      
+      function steadyAmp(f) {
+        let x = 0, v = 0;
+        const xt = simTime.map((t, i) => {
+          const omega = 2 * Math.PI * f;
+          const F = f === 0 ? 0 : F0 * Math.cos(omega * t);
+          const a = (F - c * v - k * x) / m;
+          v += a * dt;
+          x += v * dt;
+          return x;
+        });
+        const half = Math.floor(xt.length / 2);
+        return Math.max(...xt.slice(half).map(Math.abs));
+      }
+    };
+  </script>
+</body>
+</html>
